@@ -63,34 +63,30 @@ micro_wake_word:
                 switch.is_on: timer_ringing
               then:
                 - switch.turn_off: timer_ringing
-              # Stop voice assistant if running
+              # Start voice assistant, stop current announcement.
               else:
                 - if:
                     condition:
-                      voice_assistant.is_running:
+                      lambda: return id(external_media_player)->state == media_player::MediaPlayerState::MEDIA_PLAYER_STATE_ANNOUNCING;
                     then:
-                      voice_assistant.stop:
-                    # Stop any other media player announcement
+                      lambda: |-
+                        id(external_media_player)
+                          ->make_call()
+                          .set_command(media_player::MediaPlayerCommand::MEDIA_PLAYER_COMMAND_STOP)
+                          .set_announcement(true)
+                          .perform();
                     else:
                       - if:
                           condition:
-                            media_player.is_announcing:
+                            switch.is_on: wake_sound
                           then:
-                            - media_player.stop:
-                                announcement: true
-                          # Start the voice assistant and play the wake sound, if enabled
-                          else:
-                            - if:
-                                condition:
-                                  switch.is_on: wake_sound
-                                then:
-                                  - script.execute:
-                                      id: play_sound
-                                      priority: true
-                                      sound_file: !lambda return id(wake_word_triggered_sound);
-                                  - delay: 300ms
-                            - voice_assistant.start:
-                                wake_word: !lambda return wake_word;
+                            - script.execute:
+                                id: play_sound
+                                priority: true
+                                sound_file: !lambda return id(wake_word_triggered_sound);
+                            - delay: 300ms
+                      - voice_assistant.start:
+                          wake_word: !lambda return wake_word;
 
 voice_assistant:
   id: va
@@ -143,26 +139,11 @@ voice_assistant:
   on_stt_vad_end:
     - lambda: id(voice_assistant_phase) = ${voice_assist_thinking_phase_id};
     - script.execute: control_leds
-  on_intent_progress:
-    - if:
-        condition:
-          # A nonempty x variable means a streaming TTS url was sent to the media player
-          lambda: "return !x.empty();"
-        then:
-          - lambda: id(voice_assistant_phase) = ${voice_assist_replying_phase_id};
-          - script.execute: control_leds
-          # Start a script that would potentially enable the stop word if the response is longer than a second
-          - script.execute: activate_stop_word_once
   on_tts_start:
-    - if:
-        condition:
-          # The intent_progress trigger didn't start the TTS Reponse
-          lambda: "return id(voice_assistant_phase) != ${voice_assist_replying_phase_id};"
-        then:
-          - lambda: id(voice_assistant_phase) = ${voice_assist_replying_phase_id};
-          - script.execute: control_leds
-          # Start a script that would potentially enable the stop word if the response is longer than a second
-          - script.execute: activate_stop_word_once
+    - lambda: id(voice_assistant_phase) = ${voice_assist_replying_phase_id};
+    - script.execute: control_leds
+    # Start a script that would potentially enable the stop word if the response is longer than a second
+    - script.execute: activate_stop_word_if_tts_step_is_long
   # When the voice assistant ends ...
   on_end:
     - wait_until:
@@ -212,21 +193,3 @@ script:
       - delay: 1s
       # Enable stop wake word
       # - lambda: id(stop).enable();
-
-  - id: activate_stop_word_once
-    then:
-      - delay: 1s
-      # Enable stop wake word
-      - if:
-          condition:
-            switch.is_off: timer_ringing
-          then:
-            - micro_wake_word.enable_model: stop
-            - wait_until:
-                not:
-                  media_player.is_announcing:
-            - if:
-                condition:
-                  switch.is_off: timer_ringing
-                then:
-                  - micro_wake_word.disable_model: stop

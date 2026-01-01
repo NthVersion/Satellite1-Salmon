@@ -11,7 +11,7 @@ static const char *const TAG = "dac_proxy";
 
 void DACProxy::setup(){
   ESP_LOGD(TAG, "Setting up DACProxy...");
-  this->pref_ = global_preferences->make_preference<DACProxyRestoreState>(this->get_preference_hash());
+  this->pref_ = global_preferences->make_preference<DACProxyRestoreState>(this->get_object_id_hash());
   
   if (this->pref_.load(&this->restore_state_)) {
     ESP_LOGD(TAG, "Read preferences from flash");
@@ -27,7 +27,6 @@ void DACProxy::setup(){
             this->tas2780_->set_mute_on();
         }
     }
-    ESP_LOGD(TAG, "   active dac: %d", this->restore_state_.dac_output);
     this->active_dac = (DacOutput) this->restore_state_.dac_output;
     this->activate();
   }
@@ -140,22 +139,17 @@ bool DACProxy::set_mute_off(){
         ESP_LOGD(TAG, "DACProxy::set_mute_off() called before setup()");
         return false;
     }
-    bool has_changed = false;
+    ESP_LOGD(TAG, "set_mute_off: for %s", this->active_dac == LINE_OUT? "Line-Out" : "Speaker");
     bool ret = false;
-    if( this->active_dac == LINE_OUT && this->pcm5122_ && this->pcm5122_->is_muted()){
+    if( this->active_dac == LINE_OUT && this->pcm5122_ ){
         ret = this->pcm5122_->set_mute_off();
         this->restore_state_.line_out_is_muted = false;
-        has_changed = true;
     }
-    if( this->active_dac == SPEAKER && this->tas2780_ && this->tas2780_->is_muted()){
+    if( this->active_dac == SPEAKER && this->tas2780_ ){
         ret = this->tas2780_->set_mute_off();
         this->restore_state_.speaker_is_muted = false;
-        has_changed = true;
     }
-    if( has_changed ){
-        ESP_LOGD(TAG, "set_mute_off: for %s", this->active_dac == LINE_OUT? "Line-Out" : "Speaker");
-        this->save_volume_restore_state_();
-    }
+    this->save_volume_restore_state_();
     return ret;
 }
 
@@ -164,22 +158,17 @@ bool DACProxy::set_mute_on(){
         ESP_LOGD(TAG, "DACProxy::set_mute_on() called before setup()");
         return false;
     }
-    bool has_changed = false;
+    ESP_LOGD(TAG, "set_mute_on: for %s", this->active_dac == LINE_OUT? "Line-Out" : "Speaker");
     bool ret = false;
-    if( this->active_dac == LINE_OUT && this->pcm5122_ && !this->pcm5122_->is_muted() ){
+    if( this->active_dac == LINE_OUT && this->pcm5122_ ){
         ret = this->pcm5122_->set_mute_on();
         this->restore_state_.line_out_is_muted = true;
-        has_changed = true;
     }
-    if( this->active_dac == SPEAKER && this->tas2780_ && !this->tas2780_->is_muted()){
+    if( this->active_dac == SPEAKER && this->tas2780_ ){
         ret = this->tas2780_->set_mute_on();
         this->restore_state_.speaker_is_muted = true;
-        has_changed = true;
     }
-    if( has_changed ){
-        ESP_LOGD(TAG, "set_mute_on: for %s", this->active_dac == LINE_OUT? "Line-Out" : "Speaker");
-        this->save_volume_restore_state_();
-    }    
+    this->save_volume_restore_state_();
     return ret;
 }
 
@@ -188,18 +177,13 @@ bool DACProxy::set_volume(float volume){
         ESP_LOGD(TAG, "DACProxy::set_volume() called before setup()");
         return false;
     }
-    bool has_changed = false;
     bool ret = false;
-    if( this->active_dac == LINE_OUT && this->pcm5122_ && this->pcm5122_->volume() != volume){
+    if( this->active_dac == LINE_OUT && this->pcm5122_ ){
         ret = this->pcm5122_->set_volume(volume);
-        has_changed = true;
-    } else if( this->active_dac == SPEAKER && this->tas2780_ && this->tas2780_->volume() != volume ){
+    } else if( this->active_dac == SPEAKER && this->tas2780_ ){
         ret = this->tas2780_->set_volume(volume);
-        has_changed = true;
     }
-    if( has_changed ){
-        this->save_volume_restore_state_();
-    }    
+    this->save_volume_restore_state_();
     return ret;
 }
 
